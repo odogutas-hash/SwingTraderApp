@@ -246,8 +246,6 @@ with st.sidebar:
 
     pool     = st.selectbox("📊 Hisse Havuzu", ["S&P 500", "S&P 400", "S&P 600"], index=2)
     interval = st.selectbox("⏱ Zaman Dilimi", ["1d", "1h", "4h"], index=0)
-    prepost  = st.toggle("🌙 Seans Dışı Veriler", value=False)
-
     st.divider()
     st.subheader("🔧 Filtre Ayarları")
     rsi_lim    = st.slider("Maks. RSI", 20, 80, 55)
@@ -281,7 +279,7 @@ sp_info = get_sp_list(pool)
 tickers = tuple(sp_info.keys())
 
 with st.spinner(f"📡 {len(tickers)} hisse indiriliyor ({period}, {interval})..."):
-    raw = fetch_data(tickers, period, interval, prepost)
+    raw = fetch_data(tickers, period, interval, False)
 
 if raw.empty:
     st.error("Veri çekilemedi.")
@@ -352,21 +350,7 @@ if not available:
     st.stop()
 
 st.divider()
-sel_col, btn_col = st.columns([3, 1])
-sel = sel_col.selectbox("🎯 Detaylı Analiz:", available)
-
-with btn_col:
-    st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-    if sel in st.session_state['watchlist']:
-        if st.button("❌ Çıkar", key=f"wl_rm_{sel}", width="stretch"):
-            wl_remove(sel)
-    else:
-        if st.button("⭐ Ekle", key=f"wl_add_{sel}", width="stretch"):
-            wl = st.session_state['watchlist']
-            if sel not in wl:
-                wl.append(sel)
-                st.session_state['watchlist'] = wl
-                save_watchlist(wl)
+sel = st.selectbox("🎯 Detaylı Analiz:", available)
 
 df_c = pd.DataFrame({
     'Open': raw['Open'][sel], 'High': raw['High'][sel],
@@ -451,7 +435,7 @@ fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
 fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
 
 breaks = [dict(bounds=["sat", "mon"])]
-if interval != "1d" and not prepost:
+if interval != "1d":
     breaks.append(dict(bounds=[16, 9.5], pattern="hour"))
 fig.update_xaxes(rangebreaks=breaks)
 
