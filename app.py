@@ -10,11 +10,20 @@ from plotly.subplots import make_subplots
 import io, requests, json, os, datetime
 
 st.set_page_config(page_title="SwingTrader Screener", page_icon="🎯",
-                   layout="wide", initial_sidebar_state="expanded")
+                   layout="wide", initial_sidebar_state="collapsed")
 
 st.markdown("""<style>
-div[data-testid="stDataFrame"] div[role="gridcell"]      { text-align: center !important; justify-content: center !important; }
+/* Tablo hizalama */
+div[data-testid="stDataFrame"] div[role="gridcell"]         { text-align: center !important; justify-content: center !important; }
 div[data-testid="stDataFrame"] div[role="columnheader"] div { text-align: center !important; justify-content: center !important; }
+
+/* Telefon: max genişlik ve padding azalt */
+@media (max-width: 768px) {
+    .block-container { padding: 1rem 0.5rem !important; }
+    div[data-testid="stMetric"]  { font-size: 0.75rem !important; }
+    div[data-testid="stSidebar"] { width: 80vw !important; }
+    .stPlotlyChart               { height: 500px !important; }
+}
 </style>""", unsafe_allow_html=True)
 
 # ── Dosya yolları ─────────────────────────────────────────────────────────────
