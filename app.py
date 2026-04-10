@@ -443,8 +443,9 @@ fig.update_layout(
     xaxis_rangeslider_visible=False,
     hoverlabel=dict(bgcolor="rgba(10,10,10,0.95)", font_size=14, font_family="Arial Black"),
     paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-    legend=dict(orientation="h", yanchor="top", y=0.99,
-                xanchor="left", x=0.01, bgcolor="rgba(0,0,0,0.4)"),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                xanchor="left", x=0, bgcolor="rgba(0,0,0,0.4)",
+                font=dict(size=10)),
     margin=dict(l=60, r=60, t=30, b=30),
 )
 fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
