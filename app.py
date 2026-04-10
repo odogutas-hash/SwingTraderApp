@@ -300,10 +300,11 @@ if results:
 
 # ── Metrikler ─────────────────────────────────────────────────────────────────
 st.divider()
-m1, m2, m3, m4, m5, m6 = st.columns(6)
+m1, m2, m3 = st.columns(3)
 m1.metric("Havuz",      f"{len(tickers)} hisse")
 m2.metric("Taranan",    f"{valid_count} geçerli")
 m3.metric("Sinyal",     f"{len(results)} aday")
+m4, m5, m6 = st.columns(3)
 m4.metric("SPY 20g",    f"{spy_ret:+.1f}%")
 m5.metric("RSI Limiti", f"< {rsi_lim}")
 m6.metric("Güncelleme", datetime.datetime.now().strftime("%H:%M:%S"))
@@ -443,10 +444,8 @@ fig.update_layout(
     xaxis_rangeslider_visible=False,
     hoverlabel=dict(bgcolor="rgba(10,10,10,0.95)", font_size=14, font_family="Arial Black"),
     paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
-    legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                xanchor="left", x=0, bgcolor="rgba(0,0,0,0.4)",
-                font=dict(size=10)),
-    margin=dict(l=60, r=60, t=30, b=30),
+    showlegend=False,
+    margin=dict(l=50, r=20, t=20, b=20),
 )
 fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
 fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
@@ -463,12 +462,13 @@ with st.expander(f"📋 {sel} — Skor Detayı & Geçmiş"):
     match = next((r for r in results if r['Hisse'] == sel), None)
     if match:
         d = match['_detail']
-        dc1, dc2, dc3, dc4, dc5 = st.columns(5)
-        dc1.metric("RSI Skor",   f"{d['rsi']} / 25",  help="Oversold seviyesi")
-        dc2.metric("Hacim Skor", f"{d['vol']} / 25",  help="Ortalama × hacim spike")
-        dc3.metric("Fib Skor",   f"{d['fib']} / 20",  help="Kritik Fib seviyesine yakınlık")
-        dc4.metric("MACD Skor",  f"{d['macd']} / 15", help="Histogram yukarı dönüş")
-        dc5.metric("ATR Skor",   f"{d['atr']} / 15",  help="Düşük volatilite = fiyat sıkışıyor")
+        dc1, dc2, dc3 = st.columns(3)
+        dc1.metric("RSI",   f"{d['rsi']} / 25")
+        dc2.metric("Hacim", f"{d['vol']} / 25")
+        dc3.metric("Fib",   f"{d['fib']} / 20")
+        dc4, dc5, _ = st.columns(3)
+        dc4.metric("MACD",  f"{d['macd']} / 15")
+        dc5.metric("ATR",   f"{d['atr']} / 15")
         st.info(f"**Toplam Skor: {match['Skor']} / 100** — {match['Potansiyel']}")
 
     hist_df = get_ticker_history(sel)
