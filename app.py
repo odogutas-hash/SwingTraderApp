@@ -244,7 +244,7 @@ with st.sidebar:
     st.caption("Patlama Potansiyeli Screener")
     st.divider()
 
-    pool     = st.selectbox("📊 Hisse Havuzu", ["S&P 500", "S&P 400", "S&P 600"], index=2)
+    pool     = st.selectbox("📊 Hisse Havuzu", ["S&P 500", "S&P 400", "S&P 600"], index=0)
     interval = st.selectbox("⏱ Zaman Dilimi", ["1d", "1h", "4h"], index=0)
     st.divider()
     st.subheader("🔧 Filtre Ayarları")
@@ -278,17 +278,17 @@ st.caption("Gün içi patlama potansiyeli taşıyan hisseleri bulur — S&P evre
 sp_info = get_sp_list(pool)
 tickers = tuple(sp_info.keys())
 
-with st.spinner(f"📡 {len(tickers)} hisse indiriliyor ({period}, {interval})..."):
+with st.status(f"📡 {pool} verisi yükleniyor ({len(tickers)} hisse)...", expanded=True) as status:
+    st.write(f"⬇️ Fiyat verisi indiriliyor — ilk açılışta 20-30 saniye sürebilir...")
     raw = fetch_data(tickers, period, interval, False)
-
-if raw.empty:
-    st.error("Veri çekilemedi.")
-    st.stop()
-
-spy_ret = get_spy_return(period)
-
-with st.spinner("🔍 Taranıyor ve puanlanıyor..."):
+    if raw.empty:
+        status.update(label="❌ Veri çekilemedi", state="error")
+        st.stop()
+    st.write(f"📈 SPY referansı alınıyor...")
+    spy_ret = get_spy_return(period)
+    st.write(f"🔍 {len(tickers)} hisse taranıyor ve puanlanıyor...")
     results, valid_count = run_screen(raw, tickers, sp_info, rsi_lim, spy_ret, raw.shape, sma_filter)
+    status.update(label=f"✅ Tamamlandı — {len(results)} sinyal bulundu", state="complete", expanded=False)
 
 if results:
     try:
