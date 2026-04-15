@@ -465,10 +465,11 @@ fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02,
 fig.add_trace(go.Candlestick(
     x=df_c.index, open=df_c['Open'], high=df_c['High'],
     low=df_c['Low'], close=df_c['Close'], name='Fiyat',
-    increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+    increasing_line_color='#26a69a', increasing_fillcolor='#26a69a',
+    decreasing_line_color='#ef5350', decreasing_fillcolor='#ef5350',
     customdata=df_c[['Pct', 'Color']].values,
     hovertemplate=(
-        "<span style='font-size:14px;font-family:Arial Black;color:%{customdata[1]}'>"
+        "<span style='font-size:15px;font-family:Arial Black;color:%{customdata[1]}'>"
         "A:%{open:.2f} | Y:%{high:.2f} | D:%{low:.2f} | K:%{close:.2f}"
         " | %{customdata[0]:.2f}%</span><extra></extra>"
     ),
