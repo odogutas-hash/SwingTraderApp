@@ -580,7 +580,24 @@ fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.02,
                     row_heights=[0.60, 0.20, 0.20],
                     subplot_titles=('', 'Hacim', panel3_opt))
 
-# Panel 1: Mum grafik
+# ── Panel 1: Mum grafik ───────────────────────────────────────────────────────
+
+# MA ribbon: MA2 taban, MA1 dolgu (TradingView stili)
+ribbon_bull = (df_c['MA1'] >= df_c['MA2'])
+fig.add_trace(go.Scatter(
+    x=df_c.index, y=df_c['MA2'],
+    line=dict(color='rgba(239,83,80,0.6)', width=1.2), name=f'MA{int(ma2_p)}',
+    showlegend=False,
+), row=1, col=1)
+fig.add_trace(go.Scatter(
+    x=df_c.index, y=df_c['MA1'],
+    line=dict(color='rgba(38,166,154,0.6)', width=1.2), name=f'MA{int(ma1_p)}',
+    fill='tonexty',
+    fillcolor='rgba(38,166,154,0.12)' if ribbon_bull.iloc[-1] else 'rgba(239,83,80,0.10)',
+    showlegend=False,
+), row=1, col=1)
+
+# Candlestick (MA ribbon'ın üstüne gelsin)
 fig.add_trace(go.Candlestick(
     x=df_c.index, open=df_c['Open'], high=df_c['High'],
     low=df_c['Low'], close=df_c['Close'], name='Fiyat',
@@ -594,78 +611,75 @@ fig.add_trace(go.Candlestick(
     ),
 ), row=1, col=1)
 
-fig.add_trace(go.Scatter(x=df_c.index, y=df_c['MA1'],
-    line=dict(color='#00d4ff', width=1.5), name=f'MA{int(ma1_p)}'), row=1, col=1)
-fig.add_trace(go.Scatter(x=df_c.index, y=df_c['MA2'],
-    line=dict(color='#ff9800', width=1.5), name=f'MA{int(ma2_p)}'), row=1, col=1)
-
 if show_bb:
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['BB_Upper'],
-        line=dict(color='rgba(100,180,255,0.4)', width=1, dash='dot'),
+        line=dict(color='rgba(100,180,255,0.35)', width=1, dash='dot'),
         showlegend=False), row=1, col=1)
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['BB_Lower'],
-        line=dict(color='rgba(100,180,255,0.4)', width=1, dash='dot'),
-        fill='tonexty', fillcolor='rgba(100,180,255,0.05)',
+        line=dict(color='rgba(100,180,255,0.35)', width=1, dash='dot'),
+        fill='tonexty', fillcolor='rgba(100,180,255,0.04)',
         showlegend=False), row=1, col=1)
 
 if show_fib:
     rh, rl = df_c['High'].max(), df_c['Low'].min()
     for ratio, col_hex in zip(
         [0.236, 0.382, 0.500, 0.618, 0.786],
-        ['#b2b2ff', '#2962ff', '#ffffff', '#d50000', '#ff6d00']
+        ['#b2b2ff', '#2962ff', '#aaaaaa', '#d50000', '#ff6d00']
     ):
         f_v = rh - (rh - rl) * ratio
-        fig.add_hline(y=f_v, line_dash="dot", line_color=col_hex, opacity=0.45,
+        fig.add_hline(y=f_v, line_dash="dot", line_color=col_hex, opacity=0.5,
                       row=1, col=1,
-                      annotation_text=f"Fib {ratio:.3f}  ${f_v:.2f}",
-                      annotation_font_color=col_hex, annotation_position="left")
+                      annotation_text=f"  {ratio:.3f}  ${f_v:.2f}",
+                      annotation_font_color=col_hex,
+                      annotation_font_size=11,
+                      annotation_position="top right")
 
-# Squeeze göstergesi (grafiğin altında küçük noktalar)
-squeeze_y = df_c['Low'] * 0.997
-sq_colors = ['#ffcc00' if s else 'rgba(255,255,255,0.1)' for s in df_c['Squeeze'].fillna(False)]
+# Squeeze noktaları (mum gölgelerinin hemen altı)
+squeeze_y = df_c['Low'] * 0.9975
+sq_colors = ['#ffcc00' if s else 'rgba(255,255,255,0.08)' for s in df_c['Squeeze'].fillna(False)]
 fig.add_trace(go.Scatter(
     x=df_c.index, y=squeeze_y, mode='markers',
     marker=dict(color=sq_colors, size=3, symbol='circle'),
-    name='Squeeze', hoverinfo='none', showlegend=False,
+    hoverinfo='none', showlegend=False,
 ), row=1, col=1)
 
-# Panel 2: Hacim
+# ── Panel 2: Hacim ────────────────────────────────────────────────────────────
 fig.add_trace(go.Bar(x=df_c.index, y=df_c['Volume'],
-    marker_color=df_c['Color'].tolist(), opacity=0.6, showlegend=False), row=2, col=1)
+    marker_color=df_c['Color'].tolist(), opacity=0.65, showlegend=False), row=2, col=1)
 fig.add_trace(go.Scatter(x=df_c.index, y=df_c['Vol_MA20'],
-    line=dict(color='#ffcc00', width=1.2), name='Vol MA20'), row=2, col=1)
+    line=dict(color='#ffcc00', width=1.2), showlegend=False), row=2, col=1)
 
-# Panel 3: Seçime göre
+# ── Panel 3: Seçime göre ──────────────────────────────────────────────────────
 if panel3_opt == "MACD":
     macd_colors = (df_c['Hist'] >= 0).map({True: '#26a69a', False: '#ef5350'})
     fig.add_trace(go.Bar(x=df_c.index, y=df_c['Hist'],
         marker_color=macd_colors.tolist(), opacity=0.8, showlegend=False), row=3, col=1)
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['MACD'],
-        line=dict(color='#00d4ff', width=1.2), name='MACD'), row=3, col=1)
+        line=dict(color='#00d4ff', width=1.2), showlegend=False), row=3, col=1)
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['Signal'],
-        line=dict(color='#ff9800', width=1.2), name='Sinyal'), row=3, col=1)
+        line=dict(color='#ff9800', width=1.2), showlegend=False), row=3, col=1)
 
 elif panel3_opt == "Stoch RSI":
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['StochRSI_K'],
-        line=dict(color='#00d4ff', width=1.5), name='StochRSI K'), row=3, col=1)
+        line=dict(color='#00d4ff', width=1.5), showlegend=False), row=3, col=1)
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['StochRSI_D'],
-        line=dict(color='#ff9800', width=1.2), name='StochRSI D'), row=3, col=1)
+        line=dict(color='#ff9800', width=1.2), showlegend=False), row=3, col=1)
     fig.add_hline(y=80, line_dash="dot", line_color="rgba(255,100,100,0.4)", row=3, col=1)
     fig.add_hline(y=20, line_dash="dot", line_color="rgba(100,255,100,0.4)", row=3, col=1)
 
 else:  # OBV
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['OBV'],
-        line=dict(color='#b2b2ff', width=1.5), name='OBV'), row=3, col=1)
+        line=dict(color='#b2b2ff', width=1.5), showlegend=False), row=3, col=1)
     fig.add_trace(go.Scatter(x=df_c.index, y=df_c['OBV_MA'],
-        line=dict(color='#ff9800', width=1.2), name='OBV MA20'), row=3, col=1)
+        line=dict(color='#ff9800', width=1.2), showlegend=False), row=3, col=1)
 
 fig.update_layout(
-    template="plotly_dark", height=850, hovermode="x unified",
+    template="plotly_dark", height=860, hovermode="x unified",
     xaxis_rangeslider_visible=False,
     hoverlabel=dict(bgcolor="rgba(10,10,10,0.95)", font_size=13),
-    paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
+    paper_bgcolor="#131722", plot_bgcolor="#131722",
     showlegend=False,
-    margin=dict(l=50, r=20, t=20, b=20),
+    margin=dict(l=60, r=100, t=20, b=20),
 )
 fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
 fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(255,255,255,0.07)')
