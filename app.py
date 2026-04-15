@@ -68,9 +68,14 @@ def get_ticker_history(ticker):
         return pd.DataFrame()
 
 # ── Session state ─────────────────────────────────────────────────────────────
-if 'filtered'  not in st.session_state: st.session_state['filtered']  = []
-if 'watchlist' not in st.session_state: st.session_state['watchlist'] = load_watchlist()
+if 'filtered'   not in st.session_state: st.session_state['filtered']   = []
+if 'watchlist'  not in st.session_state: st.session_state['watchlist']  = load_watchlist()
 if 'sel_ticker' not in st.session_state: st.session_state['sel_ticker'] = None
+if 'pool'       not in st.session_state: st.session_state['pool']       = "S&P 500"
+if 'interval'   not in st.session_state: st.session_state['interval']   = "1d"
+if 'rsi_lim'    not in st.session_state: st.session_state['rsi_lim']    = 55
+if 'sma_filter' not in st.session_state: st.session_state['sma_filter'] = False
+if 'auto_ref'   not in st.session_state: st.session_state['auto_ref']   = "5 dk"
 
 
 # ── Katman 1: Veri ────────────────────────────────────────────────────────────
@@ -431,16 +436,23 @@ with st.sidebar:
     st.caption("Patlama Potansiyeli Screener")
     st.divider()
 
-    pool     = st.selectbox("📊 Hisse Havuzu", ["S&P 500", "S&P 400", "S&P 600"], index=0)
-    interval = st.selectbox("⏱ Zaman Dilimi", ["1d", "1h", "4h"], index=0)
+    pool     = st.selectbox("📊 Hisse Havuzu", ["S&P 500", "S&P 400", "S&P 600"],
+                            index=["S&P 500","S&P 400","S&P 600"].index(st.session_state['pool']),
+                            key='pool')
+    interval = st.selectbox("⏱ Zaman Dilimi", ["1d", "1h", "4h"],
+                            index=["1d","1h","4h"].index(st.session_state['interval']),
+                            key='interval')
 
     st.divider()
     st.subheader("🔧 Filtre Ayarları")
-    rsi_lim    = st.slider("Maks. RSI", 20, 80, 55)
-    sma_filter = st.toggle("📈 Yalnız SMA50 üzeri", value=False,
+    rsi_lim    = st.slider("Maks. RSI", 20, 80, st.session_state['rsi_lim'], key='rsi_lim')
+    sma_filter = st.toggle("📈 Yalnız SMA50 üzeri", value=st.session_state['sma_filter'],
+                           key='sma_filter',
                            help="Kapalı = her piyasa koşulunda tarama yapar")
     auto_ref   = st.selectbox("⏰ Otomatik Yenileme",
-                              ["Kapalı", "1 dk", "3 dk", "5 dk", "10 dk"], index=3)
+                              ["Kapalı", "1 dk", "3 dk", "5 dk", "10 dk"],
+                              index=["Kapalı","1 dk","3 dk","5 dk","10 dk"].index(st.session_state['auto_ref']),
+                              key='auto_ref')
     ref_secs = {"Kapalı": 0, "1 dk": 60, "3 dk": 180, "5 dk": 300, "10 dk": 600}[auto_ref]
     if ref_secs > 0:
         st.markdown(f'<meta http-equiv="refresh" content="{ref_secs}">', unsafe_allow_html=True)
