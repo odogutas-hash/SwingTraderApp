@@ -265,20 +265,24 @@ def compute_score(df, last, prev, rs_vs_spy=0.0):
 
 
 def buy_confidence(last, prev):
-    """5 koşul kontrolü → net alım etiketi"""
+    """Patlama sinyali güven skoru — 5 koşul, her biri bağımsız"""
+    stoch_k = last['StochRSI_K'] if pd.notna(last['StochRSI_K']) else 50
+    adx     = last['ADX']      if pd.notna(last['ADX'])      else 0
+    di_plus = last['DI_plus']  if pd.notna(last['DI_plus'])  else 0
+    di_minus= last['DI_minus'] if pd.notna(last['DI_minus']) else 0
+    vol_ok  = last['Volume'] / last['Vol_MA20'] > 1.3 if last['Vol_MA20'] > 0 else False
+
     conds = [
-        last['RSI'] < 40 and (last['StochRSI_K'] if pd.notna(last['StochRSI_K']) else 50) < 20,
-        (last['MACD'] > last['Signal']) and (prev['MACD'] <= prev['Signal']),
-        last['Close'] > last['SMA50'],
-        (last['ADX'] if pd.notna(last['ADX']) else 0) > 25 and
-        (last['DI_plus'] if pd.notna(last['DI_plus']) else 0) > (last['DI_minus'] if pd.notna(last['DI_minus']) else 0),
-        (last['Close'] > last['Open']) and
-        (last['Volume'] / last['Vol_MA20'] > 1.5 if last['Vol_MA20'] > 0 else False),
+        last['RSI'] < 45 or stoch_k < 25,                        # aşırı satım (gevşek)
+        last['Hist'] > prev['Hist'],                               # MACD toparlanıyor
+        last['Close'] > last['Open'] and vol_ok,                   # yeşil mum + hacim
+        di_plus > di_minus or adx < 20,                           # yön olumlu veya trend zayıf (reversal için iyi)
+        last['RSI'] < 55 and last['Hist'] > prev['Hist'],         # momentum dönüşü
     ]
     n = sum(conds)
-    if n == 5: return "🟢 GÜÇLÜ AL"
-    if n == 4: return "🟡 AL"
-    if n == 3: return "🟠 BEKLE"
+    if n >= 5: return "🟢 GÜÇLÜ AL"
+    if n >= 4: return "🟡 AL"
+    if n >= 3: return "🟠 BEKLE"
     return "🔴 KAÇIN"
 
 
