@@ -70,6 +70,7 @@ def get_ticker_history(ticker):
 # ── Session state ─────────────────────────────────────────────────────────────
 if 'filtered'  not in st.session_state: st.session_state['filtered']  = []
 if 'watchlist' not in st.session_state: st.session_state['watchlist'] = load_watchlist()
+if 'sel_ticker' not in st.session_state: st.session_state['sel_ticker'] = None
 
 
 # ── Katman 1: Veri ────────────────────────────────────────────────────────────
@@ -436,7 +437,9 @@ if not available:
     st.stop()
 
 st.divider()
-sel = st.selectbox("🎯 Detaylı Analiz:", available)
+default_idx = available.index(st.session_state['sel_ticker']) if st.session_state['sel_ticker'] in available else 0
+sel = st.selectbox("🎯 Detaylı Analiz:", available, index=default_idx)
+st.session_state['sel_ticker'] = sel
 
 df_c = pd.DataFrame({
     'Open': raw['Open'][sel], 'High': raw['High'][sel],
