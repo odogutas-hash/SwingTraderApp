@@ -250,6 +250,42 @@ def compute_score(df, last, prev, rs_vs_spy=0.0):
     return rsi_s + vol_s + fib_s + macd_s + rs_s + adx_s, vol_ratio, detail
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def run_backtest(ticker, data_shape, _df_full, threshold=55, forward_days=20):
+    """
+    Seçilen hisse için geçmiş sinyal noktalarını tespit eder ve
+    +5 / +10 / +20 günlük sonuçları hesaplar.
+    """
+    df = compute_indicators(_df_full.copy()).dropna().reset_index(drop=False)
+    signals = []
+    last_signal_idx = -15  # sinyaller çakışmasın
+
+    for i in range(60, len(df) - forward_days):
+        if i - last_signal_idx < 10:   # aynı sinyal kümesinden tek giriş
+            continue
+        window = df.iloc[:i+1].copy().set_index(df.columns[0])
+        last   = window.iloc[-1]
+        prev   = window.iloc[-2]
+        score, _, _ = compute_score(window, last, prev, rs_vs_spy=0)
+
+        if score >= threshold:
+            entry = last['Close']
+            r5  = (df['Close'].iloc[i+5]  - entry) / entry * 100
+            r10 = (df['Close'].iloc[i+10] - entry) / entry * 100
+            r20 = (df['Close'].iloc[i+forward_days] - entry) / entry * 100
+            signals.append({
+                'Tarih':    df.iloc[i, 0],
+                'Skor':     score,
+                'Giriş ($)': round(entry, 2),
+                '+5g (%)':  round(r5, 2),
+                '+10g (%)': round(r10, 2),
+                '+20g (%)': round(r20, 2),
+            })
+            last_signal_idx = i
+
+    return signals
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def run_screen(_raw, tickers, _sp_info, rsi_lim, spy_ret_20d, data_shape, sma_filter, sector_filter):
     results, valid = [], 0
@@ -596,3 +632,65 @@ with st.expander(f"📋 {sel} — Skor Detayı & Geçmiş"):
         st.plotly_chart(fig_h, width="stretch")
     else:
         st.caption("Skor trendi için birden fazla tarama gerekiyor.")
+
+# ── Backtest ──────────────────────────────────────────────────────────────────
+with st.expander(f"🔬 {sel} — Backtest (Geçmiş Sinyal Analizi)"):
+    bt_thresh = st.slider("Sinyal eşiği (min skor)", 40, 80, 55, key="bt_thresh")
+    with st.spinner("Geçmiş sinyaller hesaplanıyor..."):
+        df_bt_raw = pd.DataFrame({
+            'Open': raw['Open'][sel], 'High': raw['High'][sel],
+            'Low':  raw['Low'][sel],  'Close': raw['Close'][sel],
+            'Volume': raw['Volume'][sel],
+        }).dropna().reset_index()
+        bt_signals = run_backtest(sel, raw.shape, df_bt_raw, threshold=bt_thresh)
+
+    if not bt_signals:
+        st.info(f"Skor ≥ {bt_thresh} eşiğinde sinyal bulunamadı. Eşiği düşürmeyi deneyin.")
+    else:
+        df_bt = pd.DataFrame(bt_signals)
+        total  = len(df_bt)
+        win5   = (df_bt['+5g (%)']  > 0).sum()
+        win10  = (df_bt['+10g (%)'] > 0).sum()
+        win20  = (df_bt['+20g (%)'] > 0).sum()
+        avg5   = df_bt['+5g (%)'].mean()
+        avg10  = df_bt['+10g (%)'].mean()
+        avg20  = df_bt['+20g (%)'].mean()
+
+        st.caption(f"Toplam **{total}** sinyal bulundu (skor ≥ {bt_thresh}, veri: {interval} / {period})")
+
+        bc1, bc2, bc3, bc4 = st.columns(4)
+        bc1.metric("Sinyal Sayısı", total)
+        bc2.metric("Kazanma (5g)",  f"{win5}/{total}  {win5/total*100:.0f}%",
+                   delta=f"ort {avg5:+.1f}%")
+        bc3.metric("Kazanma (10g)", f"{win10}/{total}  {win10/total*100:.0f}%",
+                   delta=f"ort {avg10:+.1f}%")
+        bc4.metric("Kazanma (20g)", f"{win20}/{total}  {win20/total*100:.0f}%",
+                   delta=f"ort {avg20:+.1f}%")
+
+        # Bar chart — her sinyalin 10g getirisi
+        bar_colors = ['#26a69a' if v > 0 else '#ef5350' for v in df_bt['+10g (%)']]
+        fig_bt = go.Figure(go.Bar(
+            x=df_bt['Tarih'], y=df_bt['+10g (%)'],
+            marker_color=bar_colors, opacity=0.85,
+            hovertemplate="<b>%{x}</b><br>+10g: %{y:+.2f}%<extra></extra>",
+        ))
+        fig_bt.add_hline(y=0, line_color='rgba(255,255,255,0.3)', line_width=1)
+        fig_bt.update_layout(
+            template="plotly_dark", height=220, showlegend=False,
+            title=dict(text="10 Günlük Getiri — Her Sinyal Noktası", font_size=13),
+            margin=dict(l=40, r=20, t=40, b=30),
+            yaxis=dict(ticksuffix="%"),
+        )
+        st.plotly_chart(fig_bt, width="stretch")
+
+        # Tablo
+        styled_bt = (
+            df_bt.set_index('Tarih').style
+            .format({'Giriş ($)': '{:g}', '+5g (%)': '{:+.2f}%',
+                     '+10g (%)': '{:+.2f}%', '+20g (%)': '{:+.2f}%', 'Skor': '{:g}'})
+            .map(lambda v: f'color:{"#26a69a" if v > 0 else "#ef5350"};font-weight:bold',
+                 subset=['+5g (%)', '+10g (%)', '+20g (%)'])
+        )
+        st.dataframe(styled_bt, width="stretch")
+
+        st.caption("⚠️ Backtest sonuçları geçmiş performansı gösterir, gelecek getiriyi garanti etmez. RS vs SPY skor bileşeni backtest'te 0 alınır.")
