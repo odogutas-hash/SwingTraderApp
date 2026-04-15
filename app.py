@@ -173,17 +173,22 @@ def compute_indicators(df):
     df['KC_Lower'] = df['KC_Mid'] - df['ATR'] * 1.5
     df['Squeeze']  = (df['BB_Upper'] <= df['KC_Upper']) & (df['BB_Lower'] >= df['KC_Lower'])
 
-    # ADX(14) + DI+/DI-
+    # ADX(14) + DI+/DI- — Wilder smoothing (com=13 = alpha 1/14)
     dm_plus  = df['High'].diff().clip(lower=0)
     dm_minus = (-df['Low'].diff()).clip(lower=0)
     dm_plus  = dm_plus.where(dm_plus >= dm_minus, 0)
     dm_minus = dm_minus.where(dm_minus > dm_plus, 0)
-    tr14 = tr.rolling(14).sum()
-    df['DI_plus']  = dm_plus.rolling(14).sum() / (tr14 + 1e-10) * 100
-    df['DI_minus'] = dm_minus.rolling(14).sum() / (tr14 + 1e-10) * 100
+    tr14_w   = tr.ewm(com=13, adjust=False).mean()
+    df['DI_plus']  = dm_plus.ewm(com=13, adjust=False).mean() / (tr14_w + 1e-10) * 100
+    df['DI_minus'] = dm_minus.ewm(com=13, adjust=False).mean() / (tr14_w + 1e-10) * 100
     dx = ((df['DI_plus'] - df['DI_minus']).abs() /
           (df['DI_plus'] + df['DI_minus'] + 1e-10)) * 100
-    df['ADX'] = dx.rolling(14).mean()
+    df['ADX'] = dx.ewm(com=13, adjust=False).mean()
+
+    # EMA'lar — trend düzeni için
+    df['EMA20']  = df['Close'].ewm(span=20,  adjust=False).mean()
+    df['EMA50']  = df['Close'].ewm(span=50,  adjust=False).mean()
+    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
 
     # OBV (On-Balance Volume)
     direction    = df['Close'].diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
@@ -233,8 +238,12 @@ def compute_score(df, last, prev, rs_vs_spy=0.0):
     elif min_fib_pct < 5.0:                fib_s = 2
     else:                                  fib_s = 0
 
-    # 4. MACD Momentum (0-15)
-    macd_s = 15 if (last['Hist'] > 0 and last['Hist'] > prev['Hist']) else 10 if last['Hist'] > prev['Hist'] else 0
+    # 4. MACD Momentum (0-15) — crossover en güçlü sinyal
+    macd_cross = (last['MACD'] > last['Signal']) and (prev['MACD'] <= prev['Signal'])
+    if   macd_cross:                                          macd_s = 15
+    elif last['Hist'] > 0 and last['Hist'] > prev['Hist']:   macd_s = 12
+    elif last['Hist'] > prev['Hist']:                         macd_s = 8
+    else:                                                     macd_s = 0
 
     # 5. RS vs SPY (0-15) — piyasadan güçlü hisseler bonus alır
     if   rs_vs_spy > 5.0: rs_s = 15
@@ -255,8 +264,47 @@ def compute_score(df, last, prev, rs_vs_spy=0.0):
     return rsi_s + vol_s + fib_s + macd_s + rs_s + adx_s, vol_ratio, detail
 
 
+def buy_confidence(last, prev):
+    """5 koşul kontrolü → net alım etiketi"""
+    conds = [
+        last['RSI'] < 40 and (last['StochRSI_K'] if pd.notna(last['StochRSI_K']) else 50) < 20,
+        (last['MACD'] > last['Signal']) and (prev['MACD'] <= prev['Signal']),
+        last['Close'] > last['SMA50'],
+        (last['ADX'] if pd.notna(last['ADX']) else 0) > 25 and
+        (last['DI_plus'] if pd.notna(last['DI_plus']) else 0) > (last['DI_minus'] if pd.notna(last['DI_minus']) else 0),
+        (last['Close'] > last['Open']) and
+        (last['Volume'] / last['Vol_MA20'] > 1.5 if last['Vol_MA20'] > 0 else False),
+    ]
+    n = sum(conds)
+    if n == 5: return "🟢 GÜÇLÜ AL"
+    if n == 4: return "🟡 AL"
+    if n == 3: return "🟠 BEKLE"
+    return "🔴 KAÇIN"
+
+
+def calc_risk_reward(last):
+    """ATR tabanlı stop-loss & hedef fiyat (1:2 R/R)"""
+    atr  = last['ATR'] if pd.notna(last['ATR']) else last['Close'] * 0.02
+    stop = round(last['Close'] - atr * 1.5, 2)
+    tgt  = round(last['Close'] + atr * 3.0,  2)
+    rr   = round((tgt - last['Close']) / max(last['Close'] - stop, 0.01), 1)
+    return stop, tgt, rr
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_spy_close(period):
+    spy = yf.download('SPY', period=period, interval='1d', progress=False, auto_adjust=True)
+    if spy.empty:
+        return pd.Series(dtype=float)
+    close = spy['Close']
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    close.index = pd.to_datetime(close.index).normalize()
+    return close
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
-def run_backtest(ticker, data_shape, _df_full, threshold=55, forward_days=20):
+def run_backtest(ticker, data_shape, _df_full, _spy_close, threshold=55, forward_days=20):
     """
     Seçilen hisse için geçmiş sinyal noktalarını tespit eder ve
     +5 / +10 / +20 günlük sonuçları hesaplar.
@@ -271,7 +319,21 @@ def run_backtest(ticker, data_shape, _df_full, threshold=55, forward_days=20):
         window = df.iloc[:i+1].copy().set_index(df.columns[0])
         last   = window.iloc[-1]
         prev   = window.iloc[-2]
-        score, _, _ = compute_score(window, last, prev, rs_vs_spy=0)
+
+        # Gerçek RS vs SPY hesapla
+        rs_vs_spy = 0.0
+        if not _spy_close.empty and len(window) >= 20:
+            bar_date = pd.Timestamp(df.iloc[i, 0]).normalize()
+            try:
+                spy_idx = _spy_close.index.get_indexer([bar_date], method='ffill')[0]
+                if spy_idx >= 20:
+                    spy_ret = (_spy_close.iloc[spy_idx] - _spy_close.iloc[spy_idx - 20]) / _spy_close.iloc[spy_idx - 20] * 100
+                    stk_ret = (last['Close'] - window['Close'].iloc[-20]) / window['Close'].iloc[-20] * 100
+                    rs_vs_spy = float(stk_ret - spy_ret)
+            except Exception:
+                pass
+
+        score, _, _ = compute_score(window, last, prev, rs_vs_spy=rs_vs_spy)
 
         if score >= threshold:
             entry = last['Close']
@@ -326,7 +388,9 @@ def run_screen(_raw, tickers, _sp_info, rsi_lim, spy_ret_20d, data_shape, sma_fi
             dist_52w  = (last['Close'] - df['High'].tail(252).max()) / df['High'].tail(252).max() * 100
 
             score, vol_ratio, detail = compute_score(df, last, prev, rs_vs_spy)
-            pot = "🔥 Çok Yüksek" if score >= 75 else "⬆️ Yüksek" if score >= 55 else "➡️ Orta" if score >= 35 else "⬇️ Düşük"
+            pot  = "🔥 Çok Yüksek" if score >= 75 else "⬆️ Yüksek" if score >= 55 else "➡️ Orta" if score >= 35 else "⬇️ Düşük"
+            conf = buy_confidence(last, prev)
+            stop, tgt, rr = calc_risk_reward(last)
 
             results.append({
                 'Hisse':        t,
@@ -342,6 +406,10 @@ def run_screen(_raw, tickers, _sp_info, rsi_lim, spy_ret_20d, data_shape, sma_fi
                 'ADX':          round(last['ADX'], 1) if pd.notna(last['ADX']) else 0,
                 'Squeeze':      '🟡' if last['Squeeze'] else '—',
                 'Skor':         score,
+                'Alım Güveni':  conf,
+                'Stop ($)':     stop,
+                'Hedef ($)':    tgt,
+                'R/R':          rr,
                 'Potansiyel':   pot,
                 '_detail':      detail,
             })
@@ -409,7 +477,8 @@ with st.status(f"📡 {pool} verisi yükleniyor ({len(tickers)} hisse)...", expa
         status.update(label="❌ Veri çekilemedi", state="error")
         st.stop()
     st.write("📈 SPY referansı alınıyor...")
-    spy_ret = get_spy_return(period)
+    spy_ret   = get_spy_return(period)
+    spy_close = get_spy_close(period)
     st.write(f"🔍 {len(tickers)} hisse taranıyor ve puanlanıyor...")
     results, valid_count = run_screen(
         raw, tickers, sp_info, rsi_lim, spy_ret,
@@ -448,7 +517,8 @@ if results:
         .format({'Fiyat ($)': '{:g}', 'Değişim (%)': '{:+g}', 'RSI': '{:g}',
                  'StochRSI': '{:g}', 'Hacim (×avg)': '{:g}',
                  'RS vs SPY': '{:+g}', '52H Uzaklık': '{:g}%',
-                 'ADX': '{:g}', 'Skor': '{:g}'})
+                 'ADX': '{:g}', 'Skor': '{:g}',
+                 'Stop ($)': '{:g}', 'Hedef ($)': '{:g}', 'R/R': '{:g}x'})
         .map(lambda v: f'color:{"#00ff00" if v > 0 else "#ff4b4b"};font-weight:bold',
              subset=['Değişim (%)', 'RS vs SPY'])
         .map(lambda v: (
@@ -456,6 +526,11 @@ if results:
             'color:#00ff00;font-weight:bold' if v >= 55 else
             'color:#ffcc00;font-weight:bold' if v >= 35 else
             'color:#888888'), subset=['Skor'])
+        .map(lambda v: (
+            'color:#00ff00;font-weight:bold' if '🟢' in str(v) else
+            'color:#aaff00;font-weight:bold' if '🟡' in str(v) else
+            'color:#ffaa00;font-weight:bold' if '🟠' in str(v) else
+            'color:#ff4b4b;font-weight:bold'), subset=['Alım Güveni'])
         .set_properties(**{'text-align': 'center'})
     )
     st.dataframe(styled, width="stretch")
@@ -647,7 +722,7 @@ with st.expander(f"🔬 {sel} — Backtest (Geçmiş Sinyal Analizi)"):
             'Low':  raw['Low'][sel],  'Close': raw['Close'][sel],
             'Volume': raw['Volume'][sel],
         }).dropna().reset_index()
-        bt_signals = run_backtest(sel, raw.shape, df_bt_raw, threshold=bt_thresh)
+        bt_signals = run_backtest(sel, raw.shape, df_bt_raw, spy_close, threshold=bt_thresh)
 
     if not bt_signals:
         st.info(f"Skor ≥ {bt_thresh} eşiğinde sinyal bulunamadı. Eşiği düşürmeyi deneyin.")
