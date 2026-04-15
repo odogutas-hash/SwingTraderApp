@@ -217,10 +217,15 @@ def compute_score(df, last, prev, rs_vs_spy=0.0):
     else:                                     vol_s = 0
 
     # 3. Fibonacci + Squeeze (0-15)
-    rh, rl      = df['High'].max(), df['Low'].min()
-    fib_levels  = [rh - (rh - rl) * r for r in [0.236, 0.382, 0.500, 0.618, 0.786]]
-    min_fib_pct = min(abs(last['Close'] - f) / f for f in fib_levels) * 100
-    squeeze_on  = bool(last['Squeeze']) if pd.notna(last['Squeeze']) else False
+    rh, rl     = df['High'].max(), df['Low'].min()
+    fib_levels = [rh - (rh - rl) * r for r in [0.236, 0.382, 0.500, 0.618, 0.786]]
+    # Yalnızca fiyatın üstünden yaklaştığı destek seviyeleri (destek testi)
+    support_fibs = [f for f in fib_levels if last['Close'] >= f * 0.98]
+    squeeze_on   = bool(last['Squeeze']) if pd.notna(last['Squeeze']) else False
+    if support_fibs:
+        min_fib_pct = min(abs(last['Close'] - f) / f for f in support_fibs) * 100
+    else:
+        min_fib_pct = 999  # destek seviyesi yok
     if   min_fib_pct < 1.0 and squeeze_on: fib_s = 15
     elif min_fib_pct < 1.0:                fib_s = 12
     elif min_fib_pct < 2.0:                fib_s = 8
