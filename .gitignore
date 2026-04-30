@@ -3,3 +3,4 @@ score_history.csv
 __pycache__/
 *.pyc
 .env
+.streamlit/secrets.toml

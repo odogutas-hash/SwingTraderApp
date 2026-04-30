@@ -9,6 +9,26 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import io, requests, json, os, datetime
 
+# ── Telegram ──────────────────────────────────────────────────────────────────
+def _tg_creds():
+    try:
+        return st.secrets["TELEGRAM_TOKEN"], st.secrets["TELEGRAM_CHAT_ID"]
+    except Exception:
+        return None, None
+
+def send_telegram(msg):
+    token, chat_id = _tg_creds()
+    if not token:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"},
+            timeout=5,
+        )
+    except Exception:
+        pass
+
 st.set_page_config(page_title="SwingTrader Screener", page_icon="🎯",
                    layout="wide", initial_sidebar_state="collapsed")
 
@@ -395,6 +415,8 @@ def run_screen(_raw, tickers, _sp_info, rsi_lim, spy_ret_20d, data_shape, sma_fi
             ret_20d   = (last['Close'] - df['Close'].iloc[-20]) / df['Close'].iloc[-20] * 100
             rs_vs_spy = ret_20d - spy_ret_20d
             dist_52w  = (last['Close'] - df['High'].tail(252).max()) / df['High'].tail(252).max() * 100
+            gap_pct   = (last['Open'] - prev['Close']) / prev['Close'] * 100
+            gap_label = f"⬆️ +{gap_pct:.1f}%" if gap_pct >= 1.5 else (f"⬇️ {gap_pct:.1f}%" if gap_pct <= -1.5 else "—")
 
             score, vol_ratio, detail = compute_score(df, last, prev, rs_vs_spy)
             pot  = "🔥 Çok Yüksek" if score >= 75 else "⬆️ Yüksek" if score >= 55 else "➡️ Orta" if score >= 35 else "⬇️ Düşük"
@@ -416,6 +438,7 @@ def run_screen(_raw, tickers, _sp_info, rsi_lim, spy_ret_20d, data_shape, sma_fi
                 'Squeeze':      '🟡' if last['Squeeze'] else '—',
                 'Skor':         score,
                 'Alım Güveni':  conf,
+                'Gap':          gap_label,
                 'Stop ($)':     stop,
                 'Hedef ($)':    tgt,
                 'R/R':          rr,
@@ -505,6 +528,23 @@ with st.status(f"📡 {pool} verisi yükleniyor ({len(tickers)} hisse)...", expa
 if results:
     try:
         save_score_history(results)
+    except Exception:
+        pass
+
+    # Telegram — skor >= 75 olan hisseleri bildir
+    try:
+        guclular = [r for r in results if r['Skor'] >= 75]
+        if guclular:
+            now_str = datetime.datetime.now().strftime('%H:%M')
+            lines = [f"🎯 <b>SwingTrader Sinyal [{now_str}]</b>"]
+            for r in guclular[:5]:
+                gap_str = f" | Gap: {r['Gap']}" if r['Gap'] != '—' else ''
+                lines.append(
+                    f"<b>{r['Hisse']}</b> — Skor: {r['Skor']}/100{gap_str}\n"
+                    f"  Fiyat: ${r['Fiyat ($)']} | {r['Alım Güveni']}\n"
+                    f"  Stop: ${r['Stop ($)']} → Hedef: ${r['Hedef ($)']} (R/R {r['R/R']}x)"
+                )
+            send_telegram("\n\n".join(lines))
     except Exception:
         pass
 
